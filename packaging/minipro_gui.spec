@@ -13,13 +13,19 @@ sys.path.insert(0, ROOT)
 from minipro_gui import __version__  # noqa: E402
 
 APP_NAME = "minipro GUI"
+# The executable name: keep the friendly name inside the macOS bundle, but
+# avoid spaces in the Windows/Linux folder and binary.
+EXE_NAME = APP_NAME if sys.platform == "darwin" else "minipro-gui"
 BUNDLE_ID = os.environ.get("BUNDLE_ID", "io.github.minipro-gui")
 
 # Qt modules the app never uses. Excluding the Python modules isn't enough on
 # its own because PySide6's hooks still collect plugins that link against
 # these frameworks, so matching binaries are filtered out below as well.
 UNUSED_QT = ("QtNetwork", "QtQml", "QtQmlModels", "QtQmlMeta", "QtQmlWorkerScript",
-             "QtQuick", "QtPdf", "QtOpenGL", "QtSvg", "QtVirtualKeyboard")
+             "QtQuick", "QtPdf", "QtSvg", "QtVirtualKeyboard", "QtVirtualKeyboardQml")
+if sys.platform == "darwin":
+    # On Linux the xcb platform plugin links against Qt OpenGL, so keep it there.
+    UNUSED_QT += ("QtOpenGL",)
 UNUSED_PLUGIN_DIRS = ("tls", "networkinformation", "qmltooling")
 UNUSED_PLUGIN_WORDS = ("pdf", "svg")
 
@@ -27,8 +33,11 @@ UNUSED_PLUGIN_WORDS = ("pdf", "svg")
 def wanted(dest: str) -> bool:
     parts = dest.replace("\\", "/").split("/")
     name = parts[-1].lower()
+    bare = name[3:] if name.startswith("lib") else name
     for mod in UNUSED_QT:
-        if f"{mod}.framework" in parts or name.startswith(f"{mod.lower()}.") or name == mod.lower():
+        if (f"{mod}.framework" in parts                        # macOS framework
+                or name.startswith(f"{mod.lower()}.") or name == mod.lower()  # PySide6 module
+                or bare.startswith(f"qt6{mod[2:].lower()}")):  # Qt6Network.dll, libQt6Network.so.6
             return False
     if "plugins" in parts:
         if any(d in parts for d in UNUSED_PLUGIN_DIRS):
@@ -54,13 +63,14 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name=APP_NAME,
+    name=EXE_NAME,
+    icon=os.path.join(SPECPATH, "icon.png") if sys.platform == "win32" else None,  # converted by Pillow
     console=False,
     argv_emulation=False,
     upx=False,
 )
 
-coll = COLLECT(exe, a.binaries, a.datas, name=APP_NAME, upx=False)
+coll = COLLECT(exe, a.binaries, a.datas, name=EXE_NAME, upx=False)
 
 if sys.platform == "darwin":
     app = BUNDLE(

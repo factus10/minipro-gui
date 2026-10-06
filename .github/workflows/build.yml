@@ -1,0 +1,100 @@
+name: Build
+
+# Tests and packages minipro GUI for Windows and Linux. The macOS build is
+# signed and notarized locally with packaging/build_macos.sh.
+#
+# Every push and pull request runs the tests and uploads the packages as
+# workflow artifacts. Pushing a version tag (v1.2.3) also attaches them to the
+# GitHub release for that tag, creating the release if needed.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to attach packages to releases
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            platform: windows-x64
+          - name: Linux
+            # The oldest supported runner, so the build runs on older glibc versions too.
+            os: ubuntu-22.04
+            platform: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      QT_QPA_PLATFORM: offscreen  # no display on CI runners
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Qt's system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libegl1 libgl1 libfontconfig1 libdbus-1-3 libxkbcommon0 libxkbcommon-x11-0 \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Build with PyInstaller
+        run: uv run --with pyinstaller --with pillow pyinstaller --noconfirm packaging/minipro_gui.spec
+
+      - name: Check the packaged app starts
+        run: ./dist/minipro-gui/minipro-gui --self-test
+
+      - name: Package
+        id: package
+        run: |
+          version=$(uv run python -c "import minipro_gui; print(minipro_gui.__version__)")
+          cd dist
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            file="minipro-gui-$version-${{ matrix.platform }}.zip"
+            7z a -tzip "../$file" minipro-gui > /dev/null
+          else
+            file="minipro-gui-$version-${{ matrix.platform }}.tar.gz"
+            tar -czf "../$file" minipro-gui
+          fi
+          cd ..
+          ls -l "$file"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minipro-gui-${{ matrix.platform }}
+          path: ${{ steps.package.outputs.file }}
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Both jobs may get here at once; whichever is second finds the release already made.
+          gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "minipro GUI ${GITHUB_REF_NAME#v}" --generate-notes ||
+            gh release view "$GITHUB_REF_NAME" > /dev/null
+          gh release upload "$GITHUB_REF_NAME" "${{ steps.package.outputs.file }}" --clobber

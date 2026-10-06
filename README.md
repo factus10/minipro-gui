@@ -112,6 +112,21 @@ rejects. The app icon is drawn by `packaging/make_icon.py`.
 The build matches the Python it runs on, which is Apple Silicon only with the current setup.
 Intel Macs need a separate build on an Intel Mac, or a universal2 Python.
 
+## Windows and Linux builds
+
+[`.github/workflows/build.yml`](.github/workflows/build.yml) runs the tests and builds a
+Windows `.zip` and a Linux `.tar.gz` on every push and pull request. You can download them
+from the run's **Artifacts**. Pushing a version tag attaches both to that tag's GitHub
+release:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Unzip the folder and run `minipro-gui.exe` (Windows) or `minipro-gui` (Linux). These builds
+aren't code-signed, so Windows SmartScreen will warn on first launch. On Linux, Qt needs the
+usual X11/xcb libraries; if it complains about the "xcb" plugin, install `libxcb-cursor0`.
+
 ## Troubleshooting
 
 **The app won't start: "Could not find the Qt platform plugin", or `No module named
