@@ -30,11 +30,19 @@ repeat it in a terminal.
   - The image's SHA-256 is recorded, and you're warned if the file changes afterwards.
   - **Export** writes a single `.minipkg` file (a zip of the package and its image).
     **Import** it on another machine, or drop it onto the window.
+- **minipro update checks.** Once a day, the app compares your minipro with the latest
+  release; you can turn this off. If minipro came from Homebrew, the app can update it with
+  one click (`brew upgrade minipro`). Otherwise it shows the exact command for your system,
+  because those need an administrator password or a rebuild from source.
 - Light and dark mode, and drag-and-drop for image files.
 
 ## Requirements
 
-- `minipro` installed: `brew install minipro`, `apt install minipro`, or built from source.
+- `minipro` installed. On macOS, `brew install minipro`; if Homebrew is present and minipro
+  isn't, the app offers to install it for you. Fedora, Arch (AUR) and Alpine package it.
+  Debian and Ubuntu don't, so build it from source or build your own `.deb`
+  ([instructions](https://gitlab.com/DavidGriffith/minipro#installation-on-linux)).
+  minipro doesn't publish Windows binaries; build it with MSYS2 or Cygwin.
   The GUI looks for it on `PATH`, in the `MINIPRO` environment variable, and in common install
   locations, or you can set it with **Programmer → Locate minipro…**.
 - Python 3.13+ and [uv](https://docs.astral.sh/uv/).

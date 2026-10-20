@@ -26,12 +26,15 @@ from PySide6.QtWidgets import (
 
 from . import __version__, minipro
 from .chip_page import ChipPage
-from .help_text import MINIPRO_MISSING, QUICK_START
+from .help_text import QUICK_START
 from .minipro import Operation
 from .packages import PACKAGE_EXT, PackageStore
 from .packages_page import PackagesPage
 from .program_page import ProgramPage
 from .session import RunResult, Session
+from .update_checker import UpdateChecker, auto_check_due, skip_version, skipped_version
+from .update_dialog import InstallMiniproDialog, UpdateDialog
+from .updates import UpdateStatus, detect_install
 from .widgets import HelpLabel, OutputPanel, StatusBadge
 
 SUCCESS_TEXT = {
@@ -52,6 +55,8 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("minipro GUI")
         self.setAcceptDrops(True)
         self.session = Session(self)
+        self.updates = UpdateChecker(self)
+        self.update_status: UpdateStatus | None = None
         data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
         self.store = PackageStore(os.path.join(data_dir, "packages"))
 
@@ -115,6 +120,12 @@ class MainWindow(QMainWindow):
         row.addWidget(self.prog_badge)
         self.prog_hint = HelpLabel("")
         row.addWidget(self.prog_hint, 1)
+        self.update_button = QPushButton()
+        self.update_button.setProperty("role", "primary")
+        self.update_button.setToolTip("A newer version of minipro is available. Click for details.")
+        self.update_button.clicked.connect(self.show_update_dialog)
+        self.update_button.hide()
+        row.addWidget(self.update_button)
         help_button = QPushButton("Quick start guide")
         help_button.clicked.connect(self.show_quick_start)
         row.addWidget(help_button)
@@ -163,6 +174,10 @@ class MainWindow(QMainWindow):
         act.setShortcut(QKeySequence.StandardKey.HelpContents)
         act.triggered.connect(self.show_quick_start)
         help_menu.addAction(act)
+        act = QAction("Check for minipro updates…", self)
+        act.triggered.connect(lambda: self.check_updates(manual=True))
+        help_menu.addAction(act)
+        help_menu.addSeparator()
         act = QAction("About minipro GUI", self)
         act.setMenuRole(QAction.MenuRole.AboutRole)
         act.triggered.connect(self.show_about)
@@ -181,6 +196,7 @@ class MainWindow(QMainWindow):
         s.runner.progress.connect(self.output.set_progress)
         s.runner.finished.connect(self._on_finished)
         self.output.cancel_requested.connect(s.runner.cancel)
+        self.updates.finished.connect(self._on_update_checked)
 
         self.chip_page.go_program.connect(lambda: self.tabs.setCurrentWidget(self.program_page))
         self.program_page.choose_device.connect(lambda: self.tabs.setCurrentWidget(self.chip_page))
@@ -200,17 +216,88 @@ class MainWindow(QMainWindow):
         self.session.reload_devices()
         self.session.load_database_async()
         self.detect()
+        if auto_check_due():
+            self.check_updates(manual=False)
 
     def _show_missing_minipro(self) -> None:
-        box = QMessageBox(self)
-        box.setWindowTitle("minipro not found")
-        box.setTextFormat(Qt.TextFormat.RichText)
-        box.setText(MINIPRO_MISSING)
-        locate = box.addButton("Locate minipro…", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton(QMessageBox.StandardButton.Close)
-        box.exec()
-        if box.clickedButton() is locate:
+        info = detect_install(None)
+        dlg = InstallMiniproDialog(info, self)
+        dlg.exec()
+        if dlg.action == "run":
+            self._run_installer(info.run_command, "brew-install")
+        elif dlg.action == "locate":
             self.locate_minipro()
+
+    # -- minipro updates ---------------------------------------------------
+
+    def check_updates(self, manual: bool) -> None:
+        if not self.session.binary:
+            if manual:
+                self._show_missing_minipro()
+            return
+        info = detect_install(self.session.binary)
+        if self.updates.check(self.session.version.version, info, manual) and manual:
+            self.statusBar().showMessage("Checking for minipro updates…", 5000)
+
+    def _on_update_checked(self, status: UpdateStatus, manual: bool) -> None:
+        if status.release:
+            # Source-build instructions should name the release to build.
+            status.install = detect_install(self.session.binary, version=status.release.version)
+        self.update_status = status
+        available = status.available
+        if available and (manual or available != skipped_version()):
+            self.update_button.setText(f"minipro {available} available")
+            self.update_button.show()
+        else:
+            self.update_button.hide()
+        if manual:
+            self.show_update_dialog()
+
+    def show_update_dialog(self) -> None:
+        status = self.update_status
+        if status is None:
+            return
+        dlg = UpdateDialog(status, self.session.runner.busy, self)
+        dlg.exec()
+        if dlg.action == "run":
+            self._run_installer(status.install.run_command, "brew-upgrade")
+        elif dlg.action == "skip" and status.available:
+            skip_version(status.available)
+            self.update_button.hide()
+
+    def _run_installer(self, command: list[str], tag: str) -> None:
+        if self.session.runner.busy:
+            QMessageBox.information(self, "Please wait",
+                                    "Wait for the current operation to finish, then try again.")
+            return
+        if not self.output.toggle.isChecked():
+            self.output.toggle.setChecked(True)
+        self.session.run_tool(command, tag)
+
+    def _on_installer_finished(self, result: RunResult) -> None:
+        installing = result.tag == "brew-install"
+        if result.cancelled:
+            self.output.end("warn", "Cancelled", "Homebrew was stopped before it finished.")
+            return
+        if not result.ok:
+            self.output.end("error", "✗ Failed",
+                            result.summary or f"Homebrew exited with code {result.exit_code}")
+            return
+        if not self.session.locate_binary():
+            self.output.end("error", "✗ Not found",
+                            "Homebrew finished, but minipro still can't be found.")
+            return
+        version = self.session.version.version
+        self.statusBar().showMessage(f"minipro {version} · {self.session.binary}")
+        self.update_button.hide()
+        self.update_status = None
+        # A new minipro can come with a new device database.
+        self.session.reload_devices()
+        self.session.load_database_async()
+        self.output.end("ok", "✓ Installed" if installing else "✓ Updated",
+                        f"minipro {version} is ready.")
+        if installing:
+            self.detect()
 
     def locate_minipro(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Locate the minipro executable", "/usr/local/bin")
@@ -247,7 +334,9 @@ class MainWindow(QMainWindow):
     # -- running -----------------------------------------------------------
 
     def _on_started(self, command: str) -> None:
-        titles = {"presence": "Looking for a programmer…", "autodetect": "Identifying the SPI flash chip…"}
+        titles = {"presence": "Looking for a programmer…", "autodetect": "Identifying the SPI flash chip…",
+                  "brew-upgrade": "Updating minipro with Homebrew…",
+                  "brew-install": "Installing minipro with Homebrew…"}
         result_title = titles.get(self.session.runner.tag)
         if result_title is None:
             ctx = self.session.runner.context
@@ -256,6 +345,9 @@ class MainWindow(QMainWindow):
         self.output.begin(command, result_title)
 
     def _on_finished(self, result: RunResult) -> None:
+        if result.tag in ("brew-upgrade", "brew-install"):
+            self._on_installer_finished(result)
+            return
         if result.tag == "presence":
             self.session.handle_presence(result)
             status = self.session.programmer_status

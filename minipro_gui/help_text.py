@@ -49,16 +49,3 @@ you if any pin isn't touching.</p>
 </ul>
 """
 
-MINIPRO_MISSING = """
-<h3>minipro wasn't found</h3>
-<p>This application is a front end for the <b>minipro</b> command-line tool, which needs to be
-installed separately.</p>
-<ul>
-<li><b>macOS (Homebrew):</b> <code>brew install minipro</code></li>
-<li><b>Debian/Ubuntu:</b> <code>sudo apt install minipro</code></li>
-<li><b>From source:</b>
-<a href="https://gitlab.com/DavidGriffith/minipro">gitlab.com/DavidGriffith/minipro</a></li>
-</ul>
-<p>If it is already installed somewhere unusual, choose <b>Programmer → Locate minipro…</b>
-and select the executable.</p>
-"""

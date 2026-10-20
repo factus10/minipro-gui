@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from dataclasses import dataclass, field
 
@@ -57,7 +58,9 @@ class MiniproRunner(QObject):
     def busy(self) -> bool:
         return self._proc is not None
 
-    def run(self, binary: str, args: list[str], tag: str, context: dict | None = None) -> bool:
+    def run(self, binary: str, args: list[str], tag: str, context: dict | None = None,
+            display: str = "minipro") -> bool:
+        """Start a process. ``display`` is the program name shown in the log."""
         if self.busy:
             return False
         self._parser = OutputParser()
@@ -76,7 +79,7 @@ class MiniproRunner(QObject):
         proc.errorOccurred.connect(self._on_error)
         self._proc = proc
         self.busy_changed.emit(True)
-        self.started.emit(minipro.shell_quote(["minipro", *args]))
+        self.started.emit(minipro.shell_quote([display, *args]))
         proc.start()
         proc.closeWriteChannel()  # never let minipro wait on an interactive prompt
         return True
@@ -258,6 +261,10 @@ class Session(QObject):
         ctx = {"operation": operation, "device": device, "file": file, "options": options,
                **(context or {})}
         return self.runner.run(self.binary, args, f"op:{operation.value}", ctx)
+
+    def run_tool(self, command: list[str], tag: str) -> bool:
+        """Run another program (such as brew) through the same runner and log."""
+        return self.runner.run(command[0], command[1:], tag, display=os.path.basename(command[0]))
 
     def autodetect_spi(self, pins: int) -> bool:
         if not self.binary:

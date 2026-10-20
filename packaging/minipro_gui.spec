@@ -21,12 +21,13 @@ BUNDLE_ID = os.environ.get("BUNDLE_ID", "io.github.minipro-gui")
 # Qt modules the app never uses. Excluding the Python modules isn't enough on
 # its own because PySide6's hooks still collect plugins that link against
 # these frameworks, so matching binaries are filtered out below as well.
-UNUSED_QT = ("QtNetwork", "QtQml", "QtQmlModels", "QtQmlMeta", "QtQmlWorkerScript",
+# QtNetwork stays: it checks for minipro updates, using each OS's own TLS.
+UNUSED_QT = ("QtQml", "QtQmlModels", "QtQmlMeta", "QtQmlWorkerScript",
              "QtQuick", "QtPdf", "QtSvg", "QtVirtualKeyboard", "QtVirtualKeyboardQml")
 if sys.platform == "darwin":
     # On Linux the xcb platform plugin links against Qt OpenGL, so keep it there.
     UNUSED_QT += ("QtOpenGL",)
-UNUSED_PLUGIN_DIRS = ("tls", "networkinformation", "qmltooling")
+UNUSED_PLUGIN_DIRS = ("networkinformation", "qmltooling")
 UNUSED_PLUGIN_WORDS = ("pdf", "svg")
 
 

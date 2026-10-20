@@ -39,9 +39,13 @@ def self_test(argv: list[str]) -> int:
     app = QApplication(argv)
     app.setOrganizationName("minipro-gui")
     app.setApplicationName("minipro GUI")
+    from PySide6.QtNetwork import QSslSocket
+
     window = MainWindow()
-    ok = bool(app.platformName()) and window.tabs.count() == 3
+    tls = QSslSocket.availableBackends()  # update checks need HTTPS
+    ok = bool(app.platformName()) and window.tabs.count() == 3 and bool(tls)
     print(f"self-test {'ok' if ok else 'FAILED'}: Qt {app.platformName()}, "
+          f"TLS {', '.join(tls) or 'none'}, "
           f"minipro={'found' if window.session.locate_binary() else 'not found'}")
     window.deleteLater()
     return 0 if ok else 1
