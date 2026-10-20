@@ -184,7 +184,9 @@ def detect_install(
     """
     if not binary:
         return _missing(platform, os_release, version)
-    real = os.path.realpath(binary).replace("\\", "/")
+    # Follow symlinks (Homebrew links bin/minipro into its Cellar). Only for paths
+    # that exist, so the checks below also work for paths from another OS.
+    real = (os.path.realpath(binary) if os.path.exists(binary) else binary).replace("\\", "/")
 
     if "/Cellar/minipro/" in real or real.startswith("/home/linuxbrew/"):
         brew = find_brew(real) or "brew"

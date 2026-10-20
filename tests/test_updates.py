@@ -1,4 +1,7 @@
 import json
+import sys
+
+import pytest
 
 from minipro_gui import updates
 from minipro_gui.updates import (
@@ -48,6 +51,7 @@ def test_parse_homebrew_formula():
     assert parse_homebrew_formula(json.dumps({"versions": {"stable": "0.7.4"}})) == "0.7.4"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Homebrew doesn't exist on Windows")
 def test_detect_homebrew(tmp_path, monkeypatch):
     prefix = tmp_path / "homebrew"
     real = prefix / "Cellar" / "minipro" / "0.7.4" / "bin" / "minipro"
